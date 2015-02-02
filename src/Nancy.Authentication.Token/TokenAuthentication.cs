@@ -1,4 +1,6 @@
-﻿namespace Nancy.Authentication.Token
+﻿using System.Configuration;
+
+namespace Nancy.Authentication.Token
 {
     using System;
     using Nancy.Bootstrapper;
@@ -74,7 +76,14 @@
 
         private static void RetrieveCredentials(NancyContext context, TokenAuthenticationConfiguration configuration)
         {
+            var tokenFoundInHeader = true;
             var token = ExtractTokenFromHeader(context.Request);
+            if (token == null)
+            {
+                tokenFoundInHeader = false;
+                token = ExtractTokenFromCookie(context.Request);
+            }
+
             if (token == null)
             {
                 return;
@@ -83,7 +92,41 @@
             var user = configuration.Tokenizer.Detokenize(token, context, configuration.UserIdentityResolver);
             if (user != null)
             {
-                context.CurrentUser = user;
+                var tokenBasedUser = user as IUserIdentityTokenBased;
+                if (tokenBasedUser != null)
+                {
+                    tokenBasedUser.TokenFoundInHeader = tokenFoundInHeader;
+                    context.CurrentUser = tokenBasedUser;
+                }
+                else
+                    context.CurrentUser = user;
+            }
+        }
+
+        private static string ExtractTokenFromCookie(Request request)
+        {
+            if (request.Cookies.ContainsKey(ConfigurationManager.AppSettings["AuthTokenKey"]))
+            {
+                var authorization = request.Cookies[ConfigurationManager.AppSettings["AuthTokenKey"]];
+
+                if (string.IsNullOrEmpty(authorization))
+                {
+                    return null;
+                }
+
+                try
+                {
+                    var encodedToken = authorization.Trim();
+                    return String.IsNullOrWhiteSpace(encodedToken) ? null : encodedToken;
+                }
+                catch (FormatException)
+                {
+                    return null;
+                }
+            }
+            else
+            {
+                return null;
             }
         }
 
